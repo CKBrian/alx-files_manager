@@ -6,8 +6,7 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path')
 const mime = require('mime-types')
-const Bull = require('bull');
-const imageThumbnail = require('image-thumbnail');
+const fileQueue = require('../worker');
 
 class FilesController {
     static async postUpload (req, res) {
@@ -80,6 +79,14 @@ class FilesController {
                 await fs.promises.writeFile(localPath, fileData);
                 newFile.localPath = localPath;
                 const response = await dbClient.db.collection('files').insertOne(newFile);
+
+                if (type === 'image') {
+                    fileQueue.add({
+                        userId: userId.toString(),
+                        fileId: response.insertedId.toStr
+                    });
+                }
+                
                 return res.status(201).json(response.ops[0]);
             } catch (err) {
                 console.error('Error creating file:', err);
