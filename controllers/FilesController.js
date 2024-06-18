@@ -7,7 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 const path = require('path')
 const mime = require('mime-types')
 const Bull = require('bull');
-const imageThumbnail = reqiure('image-thumbnail');
+const imageThumbnail = require('image-thumbnail');
 
 class FilesController {
     static async postUpload (req, res) {
