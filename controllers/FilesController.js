@@ -9,9 +9,6 @@ const mime = require('mime-types')
 const Bull = require('bull');
 const imageThumbnail = reqiure('image-thumbnail');
 
-
-const fileQue
-
 class FilesController {
     static async postUpload (req, res) {
         const token = req.headers['x-token'];
