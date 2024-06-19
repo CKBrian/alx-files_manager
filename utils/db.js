@@ -3,7 +3,6 @@ require('dotenv').config();
 
 class DBClient {
   constructor() {
-    // Creates a client to MongoDB with host, port and database names from environment variables or otherwise default
     const host = process.env.DB_HOST || 'localhost';
     const port = process.env.DB_PORT || 27017;
     const database = process.env.DB_DATABASE || 'files_manager';
