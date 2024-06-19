@@ -1,14 +1,13 @@
 const { MongoClient } = require('mongodb');
-require('dotenv').config();
 
-class MongoDB {
+class DBClient {
   constructor() {
     const host = process.env.DB_HOST || 'localhost';
     const port = process.env.DB_PORT || 27017;
     const database = process.env.DB_DATABASE || 'files_manager';
 
     const url = `mongodb://${host}:${port}/${database}`;
-    this.client = new MongoClient(url, { useNewUrlParser: true, useUnifiedTopology: true });
+    this.client = new MongoClient(url, { useUnifiedTopology: true });
     this.client.connect();
   }
 
@@ -27,5 +26,5 @@ class MongoDB {
   }
 }
 
-const dbClient = new MongoDB();
+const dbClient = new DBClient();
 module.exports = dbClient;
