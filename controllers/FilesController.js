@@ -3,63 +3,92 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const mime = require('mime-types');
-const dbClient = require('../utils/db').default;
+const dbClient = require('../utils/db');
 const redisClient = require('../utils/redis');
 const fileQueue = require('../worker');
 
 class FilesController {
+  /**
+   * Handles the POST request for uploading a file.
+   *
+   * @param {Object} req - The request object.
+   * @param {Object} res - The response object.
+   * @returns {Promise<void>} - A promise that resolves when the response is sent.
+   */
   static async postUpload(req, res) {
+    // Extract the token from the request headers
     const token = req.headers['x-token'];
 
+    // If the token is missing, return an unauthorized error
     if (!token) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    // Generate the key for authentication
     const key = `auth_${token}`;
+
+    // Get the user ID from Redis
     const userId = await redisClient.get(key);
+
+    // If the user ID is missing, return an unauthorized error
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    // Destructure the request body
     const {
-      name, type, parentId = 0, isPublic = false, data,
+      name, type, parentId = '0', isPublic = false, data,
     } = req.body;
 
+    // If the name is missing, return a bad request error
     if (!name) {
       return res.status(400).json({ error: 'Missing name' });
     }
 
+    // If the type is missing or not valid, return a bad request error
     if (!type || !['folder', 'file', 'image'].includes(type)) {
       return res.status(400).json({ error: 'Missing type' });
     }
 
+    // If the type is not 'folder' and the data is missing, return a bad request error
     if (type !== 'folder' && !data) {
       return res.status(400).json({ error: 'Missing data' });
     }
 
     let parentFile = null;
 
-    if (parentId !== 0) {
-      parentFile = await dbClient.db.collection('files').findOne({ _id: ObjectId(parentId) });
+    try {
+      // If the parent ID is not '0', find the parent file in the database
+      if (parentId !== '0') {
+        parentFile = await dbClient.db.collection('files').findOne({ _id: ObjectId(parentId) });
 
-      if (!parentFile) {
-        return res.status(400).json({ error: 'Parent not found' });
+        // If the parent file is not found, return a bad request error
+        if (!parentFile) {
+          return res.status(400).json({ error: 'Parent not found' });
+        }
+
+        // If the parent file is not a folder, return a bad request error
+        if (parentFile.type !== 'folder') {
+          return res.status(400).json({ error: 'Parent is not a folder' });
+        }
       }
-      if (parentFile.type !== 'folder') {
-        return res.status(400).json({ error: 'Parent is not a folder' });
-      }
+    } catch (err) {
+      console.error('Error finding parent file:', err);
+      return res.status(500).json({ error: 'Internal server error' });
     }
 
+    // Create a new file object
     const newFile = {
-      userId: ObjectId(userId),
+      userId: ObjectId(userId), // Store the user ID as an ObjectId
       name,
       type,
       isPublic,
-      parentId: parentId === 0 ? 0 : ObjectId(parentId),
+      parentId: parentId === '0' ? '0' : ObjectId(parentId), // Store the parent ID as a string '0' or ObjectId
     };
 
     if (type === 'folder') {
       try {
+        // Insert the new folder into the database and return the inserted document
         const response = await dbClient.db.collection('files').insertOne(newFile);
         return res.status(201).json(response.ops[0]);
       } catch (err) {
@@ -67,24 +96,38 @@ class FilesController {
         return res.status(500).json({ error: 'Internal server error' });
       }
     } else {
+      // Get the folder path from the environment variables or use a default path
       const folderPath = process.env.FOLDER_PATH || '/tmp/files_manager';
+
+      // Create the folder if it doesn't exist
       if (!fs.existsSync(folderPath)) {
         fs.mkdirSync(folderPath, { recursive: true });
       }
 
+      // Generate a unique ID for the file
       const fileId = uuidv4();
+
+      // Generate the local path for the file
       const localPath = path.join(folderPath, fileId);
+
+      // Convert the data from base64 to a Buffer
       const fileData = Buffer.from(data, 'base64');
 
       try {
+        // Write the file data to the local path
         await fs.promises.writeFile(localPath, fileData);
+
+        // Add the local path to the file object
         newFile.localPath = localPath;
+
+        // Insert the new file into the database and return the inserted document
         const response = await dbClient.db.collection('files').insertOne(newFile);
 
+        // If the type is 'image', add the file to the processing queue
         if (type === 'image') {
           fileQueue.add({
             userId: userId.toString(),
-            fileId: response.insertedId.toStr,
+            fileId: response.insertedId.toString(),
           });
         }
 
