@@ -15,14 +15,13 @@ class UsersController {
       return res.status(400).json({ error: 'Missing password' });
     }
 
-    /* Connect to client and check if user exists */
+    /* Check if the client is connected and if user exists */
     try {
       if (!dbClient.isAlive()) {
         console.error('Db not connected');
         return res.status(500).json({ error: 'Internal dbClient Server Error' });
       }
 
-      await dbClient.connect();
       const userExists = await dbClient.db.collection('users').findOne({ email });
 
       if (userExists) {
@@ -33,7 +32,7 @@ class UsersController {
       return res.status(500).json({ error: 'Internal dbClient Server Error' });
     }
 
-    /* hash password and store new user in db */
+    /* Hash password and store new user in db */
     const hashedPassword = sha1(password);
 
     const newUser = {
@@ -52,7 +51,6 @@ class UsersController {
 
   static async getMe(req, res) {
     const token = req.headers['x-token'];
-    // console.log(req.headers);
 
     if (!token) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -65,13 +63,18 @@ class UsersController {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const user = await dbClient.db.collection('users').findOne({ _id: ObjectId(userId) }, { projection: { email: 1 } });
+    try {
+      const user = await dbClient.db.collection('users').findOne({ _id: ObjectId(userId) }, { projection: { email: 1 } });
 
-    if (!user) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      return res.status(200).json(user);
+    } catch (err) {
+      console.error('Error retrieving user:', err);
+      return res.status(500).json({ error: 'Internal Server Error' });
     }
-
-    return res.status(200).json(user);
   }
 }
 
