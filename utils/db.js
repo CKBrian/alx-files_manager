@@ -27,4 +27,5 @@ class DBClient {
 }
 
 const dbClient = new DBClient();
+console.log(dbClient.isAlive());
 module.exports = dbClient;
