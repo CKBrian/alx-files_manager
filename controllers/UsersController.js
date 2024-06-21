@@ -15,7 +15,7 @@ class UsersController {
       return res.status(400).json({ error: 'Missing password' });
     }
 
-    /* Check if the client is connected and if user exists */
+    // Check if the client is connected and if user exists
     try {
       if (!dbClient.isAlive()) {
         console.error('Db not connected');
@@ -32,7 +32,7 @@ class UsersController {
       return res.status(500).json({ error: 'Internal dbClient Server Error' });
     }
 
-    /* Hash password and store new user in db */
+    // Hash password and store new user in db
     const hashedPassword = sha1(password);
 
     const newUser = {
@@ -57,7 +57,15 @@ class UsersController {
     }
 
     const key = `auth_${token}`;
-    const userId = await redisClient.get(key);
+    let userId;
+
+    try {
+      userId = await redisClient.get(key);
+      // console.log(`Retrieved userId: ${userId} for token: ${token}`);
+    } catch (err) {
+      console.error('Error retrieving userId from Redis:', err);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
 
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -70,9 +78,9 @@ class UsersController {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
-      return res.status(200).json(user);
+      return res.status(200).json({ id: userId, email: user.email });
     } catch (err) {
-      console.error('Error retrieving user:', err);
+      console.error('Error retrieving user from database:', err);
       return res.status(500).json({ error: 'Internal Server Error' });
     }
   }

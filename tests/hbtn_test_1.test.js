@@ -1,14 +1,34 @@
 import chai from 'chai';
 import chaiHttp from 'chai-http';
 
+import { v4 as uuidv4 } from 'uuid';
+
 import MongoClient from 'mongodb';
+import { promisify } from 'util';
+import redis from 'redis';
+import sha1 from 'sha1';
 
 chai.use(chaiHttp);
 
-describe('gET /users', () => {
-  let testClientDb = null;
+describe('gET /users/me', () => {
+  let testClientDb;
+  let testRedisClient;
+  let redisDelAsync;
+  let redisGetAsync;
+  let redisSetAsync;
+  let redisKeysAsync;
+
+  let initialUser = null;
+  let initialUserId = null;
+  let initialUserToken = null;
 
   const fctRandomString = () => Math.random().toString(36).substring(2, 15);
+  const fctRemoveAllRedisKeys = async () => {
+    const keys = await redisKeysAsync('auth_*');
+    keys.forEach(async (key) => {
+      await redisDelAsync(key);
+    });
+  };
 
   beforeEach(() => {
     const dbInfo = {
@@ -22,38 +42,50 @@ describe('gET /users', () => {
 
         await testClientDb.collection('users').deleteMany({});
 
-        resolve();
+        // Add 1 user
+        initialUser = {
+          email: `${fctRandomString()}@me.com`,
+          password: sha1(fctRandomString()),
+        };
+        const createdDocs = await testClientDb.collection('users').insertOne(initialUser);
+        if (createdDocs && createdDocs.ops.length > 0) {
+          initialUserId = createdDocs.ops[0]._id.toString();
+        }
+
+        testRedisClient = redis.createClient();
+        redisDelAsync = promisify(testRedisClient.del).bind(testRedisClient);
+        redisGetAsync = promisify(testRedisClient.get).bind(testRedisClient);
+        redisSetAsync = promisify(testRedisClient.set).bind(testRedisClient);
+        redisKeysAsync = promisify(testRedisClient.keys).bind(testRedisClient);
+        testRedisClient.on('connect', async () => {
+          fctRemoveAllRedisKeys();
+
+          // Set token for this user
+          initialUserToken = uuidv4();
+          await redisSetAsync(`auth_${initialUserToken}`, initialUserId);
+          resolve();
+        });
       });
     });
   });
 
   afterEach(() => {
+    fctRemoveAllRedisKeys();
   });
 
-  it('gET /users creates a new user in DB (when pass correct parameters)', () => new Promise((done) => {
-    const userParam = {
-      email: `${fctRandomString()}@me.com`,
-      password: `${fctRandomString()}`,
-    };
+  it('gET /users/me with an correct token', () => new Promise((done) => {
     chai.request('http://localhost:5000')
-      .post('/users')
-      .send(userParam)
-      .end((err, res) => {
+      .get('/users/me')
+      .set('X-Token', initialUserToken)
+      .end(async (err, res) => {
         chai.expect(err).to.be.null;
-        chai.expect(res).to.have.status(201);
-        const resUserId = res.body.id;
-        const resUserEmail = res.body.email;
-        chai.expect(resUserEmail).to.equal(userParam.email);
+        chai.expect(res).to.have.status(200);
 
-        testClientDb.collection('users')
-          .find({})
-          .toArray((err, docs) => {
-            chai.expect(err).to.be.null;
-            chai.expect(docs.length).to.equal(1);
-            chai.expect(docs[0]._id.toString()).to.equal(resUserId);
-            chai.expect(docs[0].email).to.equal(resUserEmail);
-            done();
-          });
+        const resUser = res.body;
+        chai.expect(resUser.email).to.equal(initialUser.email);
+        chai.expect(resUser.id).to.equal(initialUserId);
+
+        done();
       });
   })).timeout(30000);
 });
